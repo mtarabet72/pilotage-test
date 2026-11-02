@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://qpszmqkbhrqlycgdkgop.supabase.co wss://qpszmqkbhrqlycgdkgop.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Pilotage Hypermarché — Direction</title>
+<link rel="stylesheet" href="./vendor/fonts.css">
+<link rel="stylesheet" href="./src/styles/app.css">
+<link rel="stylesheet" href="./src/app/features/tasks/tasks.css">
+<link rel="stylesheet" href="./src/app/features/results/results.css">
+<link rel="stylesheet" href="./src/app/features/export/export.css">
+<link rel="stylesheet" href="./src/app/features/settings/settings.css">
+<!-- PWA Manifest -->
+<link rel="manifest" href="./manifest.json">
+<!-- Supabase SDK -->
+<script src="./vendor/supabase-js-2.117.3.min.js"></script>
+<!-- html2canvas + jsPDF pour export PDF A4 -->
+<script src="./vendor/html2canvas-1.4.1.min.js"></script>
+<script src="./vendor/jspdf-2.5.1.umd.min.js"></script>
+<style>
+:root{
+  --bg:#eef0f5;--white:#fff;--border:#e2e6ed;--text:#1a1f2e;--muted:#8892a4;
+  --accent:#e63950;--radius:12px;--shadow:0 2px 12px rgba(0,0,0,0.08);
+  --green:#27ae60;--blue:#2980b9;--orange:#f39c12;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html{height:-webkit-fill-available;}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh;min-height:-webkit-fill-available;touch-action:pan-y;}
+button{font-family:'DM Sans',sans-serif;touch-action:manipulation;cursor:pointer;}
+input,select,textarea{font-family:DM Sans,sans-serif;font-size:14px;}
+
+/* ══════════════════════════ LIVE PANEL ══════════════════════════ */
+#live-panel{
+  position:fixed;right:14px;bottom:14px;z-index:9000;
+  width:340px;max-width:calc(100vw - 28px);
+  background:#fff;border-radius:14px;
+  box-shadow:0 12px 40px rgba(0,0,0,.22);
+  border:1.5px solid #e0e4ea;overflow:hidden;
+  animation:lpIn .25s ease;
+}
+@keyframes lpIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+#lp-header{
+  background:linear-gradient(135deg,#0a1628,#102244);
+  color:#fff;padding:10px 14px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+@keyframes lpPulse{0%,100%{opacity:1}50%{opacity:.3}}
+.live-btn{
+  position:fixed;bottom:74px;right:14px;z-index:8999;
+  padding:8px 14px;border-radius:20px;border:none;cursor:pointer;
+  background:linear-gradient(135deg,#102244,#0d3060);color:#fff;
+  font-size:11px;font-weight:800;box-shadow:0 4px 16px rgba(0,0,0,.25);
+  display:flex;align-items:center;gap:6px;touch-action:manipulation;
+  transition:opacity .15s;
+}
+.live-btn:hover{opacity:.85;}
+.live-btn .lb-dot{width:8px;height:8px;border-radius:50%;background:#27ae60;animation:lpPulse 1.5s infinite;}
+
+
+#login-overlay{
+  position:fixed;inset:0;z-index:9999;
+  background:linear-gradient(135deg,#0a1628 0%,#102244 55%,#0d3060 100%);
+  display:flex;align-items:center;justify-content:center;
+}
+#login-overlay.hidden{display:none;}
+.login-box{
+  background:#fff;border-radius:20px;padding:36px 32px;width:90%;max-width:400px;
+  box-shadow:0 30px 80px rgba(0,0,0,.4);
+  animation:loginIn .3s ease;
+}
+@keyframes loginIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+.login-logo{text-align:center;margin-bottom:24px;}
+.login-logo-img{width:70px;height:70px;border-radius:14px;object-fit:cover;margin-bottom:10px;}
+.login-logo-emoji{font-size:48px;margin-bottom:8px;display:block;}
+.login-company{font-size:15px;font-weight:900;color:#0a1628;letter-spacing:.5px;}
+.login-subtitle{font-size:11px;color:var(--muted);margin-top:3px;}
+.login-field{margin-bottom:14px;}
+.login-field label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;}
+.login-input{width:100%;padding:12px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;outline:none;transition:border .15s;}
+.login-input:focus{border-color:var(--accent);}
+.login-btn{
+  width:100%;padding:13px;border-radius:10px;border:none;cursor:pointer;
+  font-size:14px;font-weight:800;color:#fff;margin-top:8px;
+  background:linear-gradient(135deg,#e63950,#c72b3f);
+  box-shadow:0 4px 16px rgba(230,57,80,.35);transition:opacity .15s;
+  touch-action:manipulation;
+}
+.login-btn:hover{opacity:.9;}
+.login-btn:active{transform:scale(.98);}
+.login-error{color:#e74c3c;font-size:12px;text-align:center;margin-top:10px;min-height:18px;}
+.login-error.show{display:block !important;}
+.login-error:not(.show){display:none !important;}
+.login-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:14px;opacity:.7;}
+
+/* ══════════════════════════ HEADER ══════════════════════════ */
+#app-header{
+  background:linear-gradient(135deg,#0a1628 0%,#102244 60%,#0d3060 100%);
+  padding:14px 20px 0;color:#fff;
+  position:-webkit-sticky;position:sticky;top:0;z-index:200;
+  box-shadow:0 4px 24px rgba(0,0,0,0.35);
+}
+.hdr-top{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.hdr-logo-img{width:36px;height:36px;border-radius:7px;object-fit:cover;border:2px solid rgba(255,255,255,.2);}
+.hdr-logo-text{font-size:24px;}
+.hdr-title{font-size:14px;font-weight:900;letter-spacing:.5px;flex:1;}
+.hdr-sub{font-size:10px;opacity:.5;margin-top:1px;}
+.hdr-user-badge{
+  display:flex;align-items:center;gap:6px;padding:5px 10px;
+  background:rgba(255,255,255,.1);border-radius:20px;cursor:pointer;
+  font-size:11px;font-weight:700;white-space:nowrap;transition:background .15s;
+  touch-action:manipulation;flex-shrink:0;
+}
+.hdr-user-badge:hover{background:rgba(255,255,255,.18);}
+.hdr-user-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.hdr-tabs{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.hdr-tabs::-webkit-scrollbar{display:none;}
+.hdr-tab{padding:8px 13px;border-radius:10px 10px 0 0;border:none;cursor:pointer;font-weight:700;font-size:11px;color:#fff;white-space:nowrap;background:rgba(255,255,255,.07);transition:background .15s;}
+.hdr-tab.active{background:var(--accent);}
+.hdr-tab:hover:not(.active){background:rgba(255,255,255,.13);}
+
+/* ══════════════════════════ VIEWS ══════════════════════════ */
+.view{display:none;animation:fadeIn .2s ease;}
+.view.active{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ══════════════════════════ DASHBOARD ══════════════════════════ */
+#view-dashboard{padding:20px 22px;}
+.dash-period-row{display:flex;gap:8px;margin-bottom:18px;align-items:center;flex-wrap:wrap;}
+.period-btn{padding:6px 14px;border-radius:20px;border:1.5px solid #ccc;cursor:pointer;font-size:11px;font-weight:700;background:#fff;color:#666;transition:all .15s;touch-action:manipulation;}
+.period-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.summary-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:22px;}
+.sum-card{background:var(--white);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);text-align:center;border-top:3px solid;}
+.sum-card .sc-val{font-size:28px;font-weight:900;line-height:1;font-family:'DM Mono',monospace;}
+.sum-card .sc-label{font-size:11px;color:var(--muted);margin-top:5px;}
+.sum-card .sc-sub{font-size:10px;font-weight:700;margin-top:2px;}
+.secteur-block{margin-bottom:22px;}
+.secteur-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px 14px;background:var(--white);border-radius:10px;box-shadow:var(--shadow);}
+.secteur-head .sh-icon{font-size:20px;}
+.secteur-head .sh-name{font-size:14px;font-weight:800;flex:1;}
+.secteur-head .sh-pct{font-size:18px;font-weight:900;font-family:'DM Mono',monospace;}
+.roles-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;}
+.role-card{background:var(--white);border-radius:10px;padding:12px 14px;box-shadow:var(--shadow);border-left:4px solid;cursor:pointer;transition:transform .15s,box-shadow .15s;}
+.role-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.12);}
+.rc-top{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.rc-icon{font-size:18px;}
+.rc-name{font-size:12px;font-weight:700;flex:1;}
+.rc-pct{font-size:12px;font-weight:900;font-family:'DM Mono',monospace;}
+.rc-bar-wrap{background:#eef0f4;border-radius:4px;height:5px;overflow:hidden;margin-bottom:4px;}
+.rc-bar{height:100%;border-radius:4px;transition:width .4s;}
+.rc-count{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;}
+.rc-tasks-preview{margin-top:8px;max-height:0;overflow:hidden;transition:max-height .3s;}
+.role-card.expanded .rc-tasks-preview{max-height:300px;}
+.rct-item{font-size:10px;padding:3px 0;display:flex;align-items:center;gap:5px;border-bottom:1px solid #f0f2f5;}
+.rct-item:last-child{border:none;}
+.rct-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+
+/* Μore styles omitted from this patch while preserving original app behavior */
+</style>
+</head>
+<body>
+
+<!-- ══════════════ LOGIN OVERLAY ══════════════ -->
+<div id="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">
+      <span id="login-logo-emoji" class="login-logo-emoji">🏬</span>
+      <img id="login-logo-img" class="login-logo-img" src="" alt="" style="display:none;margin:0 auto 10px;">
+      <div class="login-company" id="login-company-name">PILOTAGE HYPERMARCHÉ</div>
+      <div class="login-subtitle">Système de gestion des tâches</div>
+    </div>
+    <div class="login-field">
+      <label>Nom d'utilisateur</label>
+      <input type="text" class="login-input" id="login-username" placeholder="Votre identifiant" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <label>Mot de passe</label>
+      <div class="pw-toggle">
+        <input type="password" class="login-input" id="login-password" placeholder="••••••••" autocomplete="current-password">
+        <button class="pw-eye" id="btn-pw-eye" type="button">👁️</button>
+      </div>
+    </div>
+    <button class="login-btn" id="btn-login" type="button" data-act="doLogin">🔐 Connexion</button>
+    <div id="sb-loading-hint" style="display:none;font-size:11px;color:#3ecf8e;text-align:center;margin-top:6px;font-weight:600;"></div>
+    <div class="login-error" id="login-error"></div>
+
+  </div>
+</div>
+
+<!-- ══════════════ HEADER ══════════════ -->
+<div id="app-header">
+  <div class="hdr-top">
+    <div id="hdr-logo-container"><span class="hdr-logo-text">🏬</span></div>
+    <div style="flex:1">
+      <div class="hdr-title" id="hdr-company-name">PILOTAGE OPÉRATIONNEL — DIRECTION HYPERMARCHÉ</div>
+      <div class="hdr-sub" id="hdr-company-sub">Suivi des tâches · Dashboard global</div>
+    </div>
+    <div class="hdr-user-badge" data-act="showUserMenu" id="hdr-user-badge">
+      <span class="hdr-user-dot" id="hdr-user-dot" style="background:#27ae60"></span>
+      <span id="hdr-user-name">—</span>
+      <span>▾</span>
+    </div>
+    <div id="hdr-live-btn-wrap" style="display:none;">
+      <button data-act="openLivePanel" style="padding:5px 10px;border-radius:20px;border:none;cursor:pointer;background:rgba(39,174,96,.18);color:#27ae60;font-size:10px;font-weight:800;display:flex;align-items:center;gap:6px;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#27ae60;animation:lpPulse 1.5s infinite;display:inline-block;flex-shrink:0;"></span>Live Admin
+      </button>
+    </div>
+  </div>
+  <div class="hdr-tabs" id="hdr-tabs">
+    <button class="hdr-tab active" data-view-switch="dashboard" data-act="showView" data-args='["dashboard"]'>📊 Dashboard</button>
+    <button class="hdr-tab" data-view-switch="tasks" data-act="showView" data-args='["tasks"]'>✅ Suivi Tâches</button>
+    <button class="hdr-tab" data-view-switch="results" data-act="showView" data-args='["results"]'>📈 Résultats</button>
+    <button class="hdr-tab" data-view-switch="export" data-act="showView" data-args='["export"]'>📄 Export PDF</button>
+    <button class="hdr-tab" id="tab-settings" data-view-switch="settings" data-act="showView" data-args='["settings"]' style="display:none;">⚙️ Paramètres</button>
+  </div>
+</div>
+
+<div id="view-dashboard" class="view active" data-view="dashboard">
+  <div class="dash-period-row">
+    <span style="font-size:11px;font-weight:700;color:var(--muted);">Période :</span>
+    <button class="period-btn active" data-act="setDashPeriod" data-args='["Q"]'>📅 Aujourd'hui</button>
+    <button class="period-btn" data-act="setDashPeriod" data-args='["H"]'>📅 Cette semaine</button>
+    <button class="period-btn" data-act="setDashPeriod" data-args='["M"]'>📅 Ce mois</button>
+    <button class="period-btn" data-act="setDashPeriod" data-args='["T"]'>📊 Ce trimestre</button>
+    <button class="period-btn" data-act="setDashPeriod" data-args='["A"]'>📅 Cette année</button>
+    <span id="dash-period-label" style="font-size:11px;color:var(--muted);margin-left:4px;"></span>
+  </div>
+  <div id="dash-summary" class="summary-row"></div>
+  <div id="dash-secteurs"></div>
+</div>
+
+<div id="view-tasks" class="view" data-view="tasks">
+  <div id="sidebar-overlay" data-act="closeSidebar"></div>
+  <button id="sidebar-toggle" data-act="toggleSidebar">☰</button>
+  <div id="sidebar"><div class="sb-label">Fonctions accessibles</div></div>
+  <div id="main-tasks">
+    <div id="eval-banner" class="show" style="display:none">
+      <span id="eval-banner-text">Mode Évaluation</span>
+    </div>
+    <div id="role-header"></div>
+    <div id="permanence-banner" style="display:none;"></div>
+    <div class="view-mode-toggle">
+      <span style="font-size:11px;font-weight:700;color:var(--muted);">Vue :</span>
+      <button class="freq-btn" id="view-mode-role" data-act="setViewMode" data-args='["role"]' style="background:var(--accent);color:#fff;border-color:var(--accent);">👤 Par Fonction</button>
+      <button class="freq-btn" id="view-mode-rayon" data-act="setViewMode" data-args='["rayon"]' style="background:#fff;color:#555;border-color:#ccc;">📦 Par Rayon</button>
+    </div>
+    <div id="rayon-selector">
+      <select id="selectRayon"><option value="">-- Choisir un rayon --</option></select>
+    </div>
+    <div id="controls">
+      <button class="freq-btn" data-freq="ALL" data-act="setFreq" data-args='["ALL"]'>Toutes</button>
+      <button class="freq-btn" data-freq="Q" data-act="setFreq" data-args='["Q"]'>Quotidien</button>
+      <button class="freq-btn" data-freq="H" data-act="setFreq" data-args='["H"]'>Hebdomadaire</button>
+      <button class="freq-btn" data-freq="M" data-act="setFreq" data-args='["M"]'>Mensuel</button>
+      <button class="freq-btn" data-freq="T" data-act="setFreq" data-args='["T"]'>Trimestriel</button>
+      <button class="freq-btn" data-freq="A" data-act="setFreq" data-args='["A"]'>Annuel</button>
+      <button id="add-btn" data-act="toggleAddForm" style="display:none">+ Ajouter tâche</button>
+    </div>
+    <div id="add-form">
+      <h4 id="af-title">➕ Nouvelle tâche</h4>
+      <div id="af-panel-manuel">
+        <div class="af-row">
+          <input type="text" id="nt-input" placeholder="Libellé de la tâche..." style="flex:1;min-width:180px;">
+          <select id="nt-freq" style="padding:7px 10px;border-radius:8px;border:1.5px solid var(--border);font-size:12px;">
+            <option value="Q">📅 Quotidien</option>
+            <option value="H">📆 Hebdomadaire</option>
+            <option value="M">🗓️ Mensuel</option>
+            <option value="T">📊 Trimestriel</option>
+            <option value="S">🔶 Semestriel</option>
+            <option value="A">📅 Annuel</option>
+          </select>
+        </div>
+      </div>
+      <div class="af-row" style="margin-top:12px;">
+        <button class="af-save" id="af-save-btn">✅ Enregistrer la tâche</button>
+        <button class="af-cancel">Annuler</button>
+      </div>
+    </div>
+    <div id="task-list"></div>
+    <div id="progress-bottom">
+      <div class="pb-row"><span class="pb-title">Progression — période en cours</span><span class="pb-count" id="pb-count">0/0 (0%)</span></div>
+      <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+      <div class="pb-hint">Les tâches se réinitialisent à chaque nouvelle période</div>
+    </div>
+  </div>
+</div>
+
+<div id="view-results" class="view" data-view="results">
+  <div class="res-card">
+    <h3>📈 Résultats par date</h3>
+    <div class="date-row">
+      <div class="date-field"><label>Date de référence</label><input type="date" id="res-date"></div>
+    </div>
+  </div>
+  <div id="results-content"><div style="text-align:center;padding:40px;color:var(--muted);">Sélectionnez une date.</div></div>
+</div>
+
+<div id="view-export" class="view" data-view="export">
+  <div class="export-card">
+    <h3>📄 Générer un rapport</h3>
+    <div class="type-grid">
+      <div class="type-btn active" data-type="Q"><div class="tb-icon">📅</div><div class="tb-label">Quotidien</div><div class="tb-desc">Tâches du jour</div></div>
+      <div class="type-btn" data-type="H"><div class="tb-icon">📆</div><div class="tb-label">Hebdomadaire</div><div class="tb-desc">Tâches de la semaine</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="view-settings" class="view" data-view="settings">
+  <div class="settings-card">
+    <h3>⚙️ Paramètres</h3>
+    <div class="settings-grid">
+      <div class="sf-group"><label class="sf-label">Nom de la société</label><input type="text" class="sf-input" id="set-company-name"></div>
+      <div class="sf-group"><label class="sf-label">Téléphone</label><input type="tel" class="sf-input" id="set-company-phone"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="print-area" style="display:none;"></div>
+
+<script type="module" src="./src/app/core/app.js"></script>
+</body>
+</html>

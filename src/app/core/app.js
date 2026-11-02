@@ -1,0 +1,223 @@
+import { appState, setTheme } from './state.js';
+import { Router } from './router.js';
+import { connect, sbStatus, subscribe, kvGet } from '../services/supabase.js';
+import { purgeLegacyStorage } from '../services/config.js';
+import { initActions } from './actions.js';
+import { initTasks } from '../features/tasks/TasksView.js';
+import { flushPending } from './completions.js';
+import { initLoginConnection, refreshLoginStatus, loginErrorMessage } from '../features/settings/loginConnection.js';
+import { initLive } from '../features/live/LivePanel.js';
+import { initNotifications } from '../features/live/notifications.js';
+import { initSettings, applyCompanyBranding } from '../features/settings/SettingsView.js';
+import { openChangePassword } from '../features/settings/passwordModal.js';
+import { initExport } from '../features/export/ExportView.js';
+import { initResults } from '../features/results/ResultsView.js';
+import { initDashboard } from '../features/dashboard/DashboardView.js';
+import { login, logout, restoreSession, getCurrentUser, isDirector } from '../services/auth.js';
+
+const $ = (id) => document.getElementById(id);
+
+function toast(msg, color = '#27ae60') {
+  const el = $('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.background = color;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function setLoginBusy(busy, hint = '') {
+  const btn = $('btn-login');
+  const hintEl = $('sb-loading-hint');
+  if (btn) { btn.disabled = busy; btn.style.opacity = busy ? '0.6' : '1'; }
+  if (hintEl) { hintEl.style.display = busy ? 'block' : 'none'; hintEl.textContent = hint; }
+}
+
+function applyUser(user) {
+  $('login-overlay')?.classList.add('hidden');
+  const nameEl = $('hdr-user-name');
+  if (nameEl) nameEl.textContent = user.name || user.username;
+  const admin = isDirector(user);
+  const settingsTab = $('tab-settings');
+  if (settingsTab) settingsTab.style.display = admin ? '' : 'none';
+  const live = $('hdr-live-btn-wrap');
+  if (live) live.style.display = admin ? '' : 'none';
+  document.dispatchEvent(new CustomEvent('pilotage:login', { detail: user }));
+  if (user.mustChangePassword) promptPasswordChange(user);
+}
+
+function promptPasswordChange() { openChangePassword({ forced: true }); }
+
+async function doLogin() {
+  const errEl = $('login-error');
+  errEl?.classList.remove('show');
+  try {
+    const user = await login($('login-username').value, $('login-password').value);
+    $('login-password').value = '';
+    applyUser(user);
+    startRealtime();
+  } catch (e) {
+    if (errEl) { errEl.textContent = loginErrorMessage(e); errEl.classList.add('show'); }
+  }
+}
+
+function doLogout() {
+  stopRealtime();
+  logout();
+  document.dispatchEvent(new CustomEvent('pilotage:logout'));
+  $('login-overlay')?.classList.remove('hidden');
+}
+
+function showUserMenu() {
+  const user = getCurrentUser();
+  if (!user) return;
+  if (window.confirm(`Connecté : ${user.name}\n\nOK = changer le mot de passe\nAnnuler = autres options`)) openChangePassword();
+  else if (window.confirm('Se déconnecter ?')) doLogout();
+}
+
+// Realtime : démarre APRÈS la connexion (les données sont protégées par la RLS : il faut un jeton utilisateur).
+let unsubscribers = [];
+function startRealtime() {
+  stopRealtime();
+  if (!sbStatus.connected) return;
+  unsubscribers = ['hm_app_data', 'hm_events'].map((table) =>
+    subscribe(table, async (payload) => {
+      const key = payload.new?.key ?? payload.old?.key ?? payload.new?.id ?? payload.old?.id;
+      // Re-lecture systématique : payload.new.data peut être null avec jsonb.
+      const fresh = table === 'hm_app_data' && key ? await kvGet(key).catch(() => null) : null;
+      document.dispatchEvent(new CustomEvent('pilotage:data', { detail: { table, key, fresh, payload } }));
+    })
+  );
+}
+function stopRealtime() {
+  unsubscribers.forEach((off) => { try { off(); } catch (e) { /* déjà fermé */ } });
+  unsubscribers = [];
+}
+
+// Démarrage : connexion Supabase (timeout 8 s), puis réouverture de la session mémorisée.
+async function bootstrapData() {
+  purgeLegacyStorage();
+  setLoginBusy(true, 'Connexion au serveur…');
+  try {
+    await connect();
+  } catch (e) {
+    console.warn('Supabase indisponible :', sbStatus.error);
+    toast('Serveur injoignable : connexion impossible pour le moment', '#e67e22');
+  }
+  let user = null;
+  if (sbStatus.connected) {
+    try { user = await restoreSession(); } catch (e) { console.warn('Session :', e.message); }
+  }
+  setLoginBusy(false);
+  refreshLoginStatus();
+  if (user) { applyUser(user); startRealtime(); }
+}
+
+// Session expirée ou droits refusés par la base : on invite à se reconnecter.
+document.addEventListener('pilotage:denied', () => toast('Accès refusé : reconnectez-vous (session expirée ?)', '#e74c3c'));
+
+const ensureViewRegistry = () => {
+  const routeNames = [...document.querySelectorAll('[data-view]')].map((el) => el.dataset.view);
+  return routeNames;
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  const root = document.documentElement;
+  const initialTheme = localStorage.getItem('pilotage-theme') || appState.ui.theme;
+  setTheme(initialTheme);
+
+  const router = new Router();
+  const viewNames = ensureViewRegistry();
+
+  viewNames.forEach((viewName) => {
+    router.register(viewName, {
+      name: viewName,
+      render: () => {
+        document.querySelectorAll('[data-view]').forEach((el) => {
+          const isActive = el.dataset.view === viewName;
+          el.classList.toggle('active', isActive);
+        });
+
+        document.querySelectorAll('[data-view-switch]').forEach((tab) => {
+          const isActive = tab.dataset.viewSwitch === viewName;
+          tab.classList.toggle('active', isActive);
+        });
+      }
+    });
+  });
+
+  const activateView = (viewName) => {
+    if (!viewName || !router.routes.has(viewName)) {
+      return;
+    }
+
+    appState.ui.currentView = viewName;
+    router.setCurrent(viewName);
+    document.dispatchEvent(new CustomEvent('pilotage:view', { detail: viewName }));
+  };
+
+  document.querySelectorAll('[data-view-switch]').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      activateView(tab.dataset.viewSwitch);
+    });
+  });
+
+  document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextTheme = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      setTheme(nextTheme);
+    });
+  });
+
+  window.showView = activateView;
+  window.doLogin = doLogin;
+  window.showUserMenu = showUserMenu;
+  window.doLogout = doLogout;
+  $('btn-pw-eye')?.addEventListener('click', () => {
+    const i = $('login-password');
+    i.type = i.type === 'password' ? 'text' : 'password';
+  });
+  ['login-username', 'login-password'].forEach((id) =>
+    $(id)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); })
+  );
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(() => {});   // PWA hors ligne + notifications Android
+  const syncHeaderHeight = () => {
+    const h = document.getElementById('app-header');
+    if (h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight + 'px');
+  };
+  syncHeaderHeight();
+  window.addEventListener('resize', syncHeaderHeight);
+  window.addEventListener('load', syncHeaderHeight);
+  document.fonts?.ready?.then(syncHeaderHeight);
+  initActions();
+  initLoginConnection();
+  initDashboard();
+  initTasks();
+  initResults();
+  initExport();
+  initSettings();
+  initLive();
+  initNotifications();
+  window.addEventListener('online', () => flushPending());
+  bootstrapData();
+  window.appRouter = router;
+
+  window.pilotageApp = {
+    ready: true,
+    theme: appState.ui.theme,
+    router,
+    init() {
+      document.body.dataset.appReady = 'true';
+      document.body.dataset.theme = root.getAttribute('data-theme') || 'light';
+      activateView(appState.ui.currentView);
+    }
+  };
+
+  window.pilotageApp.init();
+});
+
+window.addEventListener('load', () => {
+  if (window.pilotageApp) {
+    window.pilotageApp.ready = true;
+  }
+});

@@ -1,0 +1,87 @@
+@import "./design-system.css";
+@import "./layout.css";
+
+body {
+  min-height: 100vh;
+}
+
+#app-header {
+  background: linear-gradient(135deg, #0a1628 0%, #102244 60%, #0d3060 100%);
+  padding: 14px 20px 0;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18);
+}
+
+.hdr-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.hdr-user-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.1);
+  color: #fff;
+}
+
+.hdr-tab.active {
+  background: linear-gradient(135deg, #e63950, #c81d3d);
+  box-shadow: 0 10px 20px rgba(230, 57, 80, 0.16);
+}
+
+.kpi-card {
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.96));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  padding: 18px 20px;
+}
+
+.surface-card,
+.panel-shell,
+.task-item,
+.res-card,
+.settings-card,
+.export-card {
+  background: rgba(255,255,255,.96);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+}
+
+.btn,
+.period-btn,
+.freq-btn,
+.type-btn,
+.scope-btn {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  transition: all 0.2s ease;
+}
+
+.btn--primary,
+.period-btn.active,
+.freq-btn.active,
+.type-btn.active,
+.scope-btn.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.view {
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
